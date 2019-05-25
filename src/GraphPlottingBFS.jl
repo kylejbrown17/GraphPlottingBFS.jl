@@ -20,7 +20,7 @@ end
 function leaf_case!(G,v,s)
     set_prop!(G,v,:height,0)   # distance to leaf
     set_prop!(G,v,:depth, s.d) # distance to root
-    set_prop!(G,v,:left,  s.w) 
+    set_prop!(G,v,:left,  s.w)
     set_prop!(G,v,:width, 1)
     set_prop!(G,v,:right, s.w+1)
     set_prop!(G,v,:center, (get_prop(G,v,:left)+get_prop(G,v,:right))/2.0)
@@ -58,8 +58,8 @@ function bfs!(G,v,s)
     return BFS_state(d=s.d-1,w=s.w,d_max=s.d_max)
 end
 
-function plot_graph_bfs(G,v=0;mode=:leaf_aligned,ϵ=0.000000001,edge_pad=1.1)
-    G = MetaDiGraph(G)
+function plot_graph_bfs(graph,v=0;mode=:leaf_aligned,ϵ=0.000000001,edge_pad=1.1,fillcolor="cyan")
+    G = MetaDiGraph(graph)
     if v == 0
         end_vtxs = [v for v in vertices(G) if length(outneighbors(G,v)) == 0]
         s = BFS_state(0,0,0)
@@ -84,7 +84,7 @@ function plot_graph_bfs(G,v=0;mode=:leaf_aligned,ϵ=0.000000001,edge_pad=1.1)
         dx = (x[e.dst] - x[e.src])
         dy = (y[e.dst] - y[e.src])
         d = sqrt(dx^2 + dy^2)
-        push!(lines, 
+        push!(lines,
             line([
                 (x[e.src] + (rp)*dx/d, y[e.src] + (rp)*dy/d),
                 (x[e.dst] - (rp)*dx/d, y[e.dst] - (rp)*dy/d)
@@ -95,7 +95,7 @@ function plot_graph_bfs(G,v=0;mode=:leaf_aligned,ϵ=0.000000001,edge_pad=1.1)
         (context(),
             [text(x[i],y[i],string(i),hcenter,vcenter) for i in 1:nv(G)]...,
             stroke("black"),fontsize(10pt), font("futura")),
-        (context(),circle(x,y,r*ones(nv(G))),fill("cyan")),
+        (context(),circle(x,y,r*ones(nv(G))),fill(fillcolor)),
         (context(),lines...,stroke("black"))
     )
 end

@@ -7,6 +7,11 @@ using Parameters
 
 export
 	BFS_state,
+    leaf_case!,
+    initial_branch_case!,
+    backup!,
+    step_in,
+    step_out,
 	bfs!,
 	plot_graph_bfs
 
@@ -17,8 +22,8 @@ export
 end
 
 
-function leaf_case!(G,v,s)
-    set_prop!(G,v,:height,0)   # distance to leaf
+function leaf_case!(G,v,s::BFS_state)
+    set_prop!(G,v,:height, 0)   # distance to leaf
     set_prop!(G,v,:depth, s.d) # distance to root
     set_prop!(G,v,:left,  s.w)
     set_prop!(G,v,:width, 1)
@@ -26,14 +31,14 @@ function leaf_case!(G,v,s)
     set_prop!(G,v,:center, (get_prop(G,v,:left)+get_prop(G,v,:right))/2.0)
     s = BFS_state(d=s.d,w=s.w+1,d_max=max(s.d_max,s.d))
 end
-function initial_branch_case!(G,v,s)
-    set_prop!(G,v,:height,0)   # distance to leaf
+function initial_branch_case!(G,v,s::BFS_state)
+    set_prop!(G,v,:height, 0)   # distance to leaf
     set_prop!(G,v,:left,  s.w)
     set_prop!(G,v,:depth,  s.d)
     set_prop!(G,v,:edge_count,  0)
     set_prop!(G,v,:center, 0.0)
 end
-function backup!(G,v,v2,s)
+function backup!(G,v,v2,s::BFS_state)
     set_prop!(G,v,:height, max(get_prop(G,v,:height),1+get_prop(G,v2,:height)))   # distance to leaf
     set_prop!(G,v,:right, s.w)
     set_prop!(G,v,:width, s.w - get_prop(G,v,:left))
@@ -43,9 +48,11 @@ function backup!(G,v,v2,s)
     set_prop!(G,v,:center, c*((e-1)/e) + get_prop(G,v2,:center)*(1/e))
 end
 
+step_in(s::BFS_state) = BFS_state(d=s.d+1,w=s.w,d_max=s.d_max)
+step_out(s::BFS_state) = BFS_state(d=s.d-1,w=s.w,d_max=s.d_max)
 
 function bfs!(G,v,s)
-    s = BFS_state(d=s.d+1,w=s.w,d_max=s.d_max)
+    s = step_in(s)
     if length(inneighbors(G,v)) == 0
         s = leaf_case!(G,v,s)
     else
@@ -55,7 +62,7 @@ function bfs!(G,v,s)
             backup!(G,v,v2,s)
         end
     end
-    return BFS_state(d=s.d-1,w=s.w,d_max=s.d_max)
+    return step_out(s)
 end
 
 function plot_graph_bfs(graph,v=0;mode=:leaf_aligned,ϵ=0.000000001,edge_pad=1.1,fillcolor="cyan")

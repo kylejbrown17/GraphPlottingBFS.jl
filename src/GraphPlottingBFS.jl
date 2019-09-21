@@ -13,6 +13,8 @@ export
     step_in,
     step_out,
 	bfs!,
+	get_graph_bfs,
+	display_graph_bfs,
 	plot_graph_bfs,
     render_grid_graph
 
@@ -66,8 +68,16 @@ function bfs!(G,v,s)
     return step_out(s)
 end
 
-function plot_graph_bfs(graph,v=0;mode=:leaf_aligned,ϵ=0.000000001,edge_pad=1.1,fillcolor="cyan")
-    G = MetaDiGraph(graph)
+function get_graph_bfs(graph,v=0;
+        shape_function = (G,v,x,y,r)->Compose.circle(x,y,r),
+        color_function = (G,v,x,y,r)->"cyan",
+        text_function = (G,v,x,y,r)->string(v),
+        mode=:leaf_aligned,
+        ϵ=0.000000001,
+        edge_pad=1.1,
+        r = 0.2)
+
+    G = deepcopy(graph)
     if v == 0
         end_vtxs = [v for v in vertices(G) if length(outneighbors(G,v)) == 0]
         s = BFS_state(0,0,0)
@@ -85,7 +95,6 @@ function plot_graph_bfs(graph,v=0;mode=:leaf_aligned,ϵ=0.000000001,edge_pad=1.1
         x = s.d_max .- [get_prop(G,v,:depth)-0.5 for v in vertices(G)]
     end
     y = [get_prop(G,v,:center) for v in vertices(G)]
-    r = 0.2;
     rp = edge_pad*r; # padded radius for plotting
     lines = Vector{Compose.Form}()
     for e in edges(G)
@@ -99,14 +108,38 @@ function plot_graph_bfs(graph,v=0;mode=:leaf_aligned,ϵ=0.000000001,edge_pad=1.1
                 ])
         )
     end
-    compose(context(units=UnitBox(0,0,s.d_max,s.w)),
-        (context(),
-            [text(x[i],y[i],string(i),hcenter,vcenter) for i in 1:nv(G)]...,
-            stroke("black"),fontsize(10pt), font("futura")),
-        (context(),circle(x,y,r*ones(nv(G))),fill(fillcolor)),
-        (context(),lines...,stroke("black"))
-    )
+    shapes = map(i->shape_function(G,i,x[i],y[i],r),1:nv(graph))
+    fill_colors = map(i->color_function(G,i,x[i],y[i],r),1:nv(graph))
+    text_strings = map(i->text_function(G,i,x[i],y[i],r),1:nv(graph))
+
+    return s.d_max,s.w,x,y,lines,shapes,fill_colors,text_strings
 end
+
+function display_graph_bfs(canvas_height,canvas_width,x,y,lines,shapes,fill_colors,text_strings)
+    N = length(x)
+    compose(context(units=UnitBox(0,0,canvas_height,canvas_width)),
+        (context(),[text(x[i],y[i],text_strings[i],hcenter,vcenter) for i in 1:N]...,
+            stroke("black"),fontsize(10pt), font("futura")),
+        map(i->(context(),shapes[i],fill(fill_colors[i])),1:N)...,
+        (context(),lines...,stroke("black")))
+end
+
+function GraphPlottingBFS.plot_graph_bfs(graph,v=0;kwargs...)
+    display_graph_bfs(get_graph_bfs(graph,v;kwargs...)...)
+end
+
+"""
+    `SimpleGridWorld{G}`
+
+    To simplify rendering.
+"""
+struct SimpleGridWorld{G}
+    graph::G
+    x::Vector{Float64}
+    y::Vector{Float64}
+end
+get_x(env::E,i::Int) where {E<:SimpleGridWorld} = env.x[i]
+get_y(env::E,i::Int) where {E<:SimpleGridWorld} = env.i[i]
 
 """
     Tool for rendering paths (sequences of vertices) through a grid environment

@@ -179,8 +179,8 @@ function get_graph_bfs(graph,v=0;
 	# canvas_height = maximum(feat_vals[ForwardDepth()])+1
 	# canvas_width = maximum(feat_vals[ForwardWidth()])+1
     # set_default_graphic_size((2*canvas_height)cm,(canvas_width)cm)
-	canvas_height = 1+maximum(x) .- min(0,minimum(x))
-	canvas_width = 1+maximum(y) .- min(0,minimum(y))
+	canvas_height = 2+maximum(x) .- min(0,minimum(x))
+	canvas_width = 2+maximum(y) .- min(0,minimum(y))
     set_default_graphic_size((aspect_ratio*canvas_height)cm,(canvas_width)cm)
 
     # G = MetaDiGraph(deepcopy(graph))
@@ -223,11 +223,23 @@ end
 
 function display_graph_bfs(canvas_height,canvas_width,x,y,lines,shapes,fill_colors,text_strings)
     N = length(x)
-    compose(context(units=UnitBox(0,0,canvas_height,canvas_width)),
-        (context(),[text(x[i],y[i],text_strings[i],hcenter,vcenter) for i in 1:N]...,
-            stroke("black"),fontsize(10pt), font("futura")),
+    compose( context(units=UnitBox(0,0,canvas_height,canvas_width)),
+        (context(),
+			[text(x[i],y[i],text_strings[i],hcenter,vcenter) for i in 1:N]...,
+            stroke("black"),
+			fontsize(10pt),
+			font("futura"),
+		),
         map(i->(context(),shapes[i],fill(fill_colors[i])),1:N)...,
-        (context(),lines...,stroke("black")))
+        (context(),
+			lines...,
+			stroke("black")
+		),
+        (context(),
+			rectangle(0,0,canvas_height,canvas_width),
+			fill("white")
+		)
+	)
 end
 
 function plot_graph_bfs(graph,v=0;kwargs...)

@@ -24,7 +24,6 @@ export
 	d_max::Int = 0 # max depth so far
 end
 
-
 function leaf_case!(G,v,s::BFS_state)
     set_prop!(G,v,:height, 0)   # distance to leaf
     set_prop!(G,v,:depth, s.d) # distance to root
@@ -86,9 +85,7 @@ backward_propagate(f,G,v,val,v2,val2,args...) = val
 forward_accumulate(f,G,v,val,vtxs,vals,args...) = val
 backward_accumulate(f,G,v,val,vtxs,vals,args...) = val
 
-# forward_propagate(f::BackwardDepth,	G,v,val,v2,val2,args...) 	= max(val,val2-1)
 backward_propagate(f::BackwardDepth,G,v,val,v2,val2,args...) 	= max(val,val2+1)
-# backward_propagate(f::ForwardDepth,G,v,val,v2,val2,args...) 	= max(val,val2-1)
 forward_propagate(f::ForwardDepth,	G,v,val,v2,val2,args...) 	= max(val,val2+1)
 forward_propagate(f::ForwardWidth,	G,v,val,v2,val2,args...) 	= max(val,val2/max(1,outdegree(G,v2)))
 backward_propagate(f::BackwardWidth,G,v,val,v2,val2,args...) 	= max(val,val2/max(1,indegree(G,v2)))
@@ -106,7 +103,7 @@ function get_graph_layout(G,feats=[ForwardDepth(),BackwardDepth(),ForwardWidth()
 			end
 		end
 	end
-	for v in topological_sort_by_dfs(reverse(G))
+	for v in reverse(topological_sort_by_dfs(G))
 		for (f,vec) in feat_vals
 			vec[v] = backward_accumulate(f,G,v,vec[v],outneighbors(G,v),map(v2->vec[v2], outneighbors(G,v)))
 			for v2 in outneighbors(G,v)
@@ -116,7 +113,10 @@ function get_graph_layout(G,feats=[ForwardDepth(),BackwardDepth(),ForwardWidth()
 	end
 	feat_vals[VtxWidth()] = max.(feat_vals[ForwardWidth()],feat_vals[BackwardWidth()])
 
-	graph = MetaDiGraph(deepcopy(G))
+    graph = MetaDiGraph(nv(G))
+    for e in edges(G)
+        add_edge!(graph,e)
+    end
 	end_vtxs = [v for v in vertices(graph) if outdegree(graph,v) == 0]
 	s = BFS_state(0,0,0)
 	for v in end_vtxs
@@ -153,6 +153,26 @@ function get_graph_layout(G,feats=[ForwardDepth(),BackwardDepth(),ForwardWidth()
 	feat_vals
 end
 
+# mutable struct NodeDrawModel{S}
+# 	x::Float64
+# 	y::Float64
+# 	shape::S
+# 	fill_color::Colorant
+# 	draw_color::Colorant
+# 	text::String
+# end
+# mutable struct EdgeDrawModel
+# 	v1::Int
+# 	v2::Int
+# 	edge_pad::Float64
+# 	text::String
+# end
+# mutable struct GraphBFSModel
+#     canvas_height::Float64
+# 	canvas_width::Float64
+# 	nodes::Vector{EdgeDrawModel}
+# 	edges::Vector{NodeDrawModel}
+# end
 
 function get_graph_bfs(graph,v=0;
         shape_function = (G,v,x,y,r)->Compose.circle(x,y,r),
@@ -162,6 +182,7 @@ function get_graph_bfs(graph,v=0;
         ϵ=0.000000001,
         edge_pad=1.1,
 		aspect_ratio=2,
+		scale=1.0,
         r = 0.2)
 
     # G = graph
@@ -181,26 +202,8 @@ function get_graph_bfs(graph,v=0;
     # set_default_graphic_size((2*canvas_height)cm,(canvas_width)cm)
 	canvas_height = 2+maximum(x) .- min(0,minimum(x))
 	canvas_width = 2+maximum(y) .- min(0,minimum(y))
-    set_default_graphic_size((aspect_ratio*canvas_height)cm,(canvas_width)cm)
+    set_default_graphic_size((scale*aspect_ratio*canvas_height)cm,(scale*canvas_width)cm)
 
-    # G = MetaDiGraph(deepcopy(graph))
-    # if v == 0
-    #     end_vtxs = [v for v in vertices(G) if length(outneighbors(G,v)) == 0]
-    #     s = BFS_state(0,0,0)
-    #     for v in end_vtxs
-    #         s = bfs!(G,v,s)
-    #     end
-    # else
-    #     s = BFS_state(0,0,0)
-    #     s = bfs!(G,v,s)
-    # end
-    # set_default_graphic_size((s.d_max*2)cm,(s.w)cm)
-    # if mode == :leaf_aligned
-    #     x = [get_prop(G,v,:height)+0.5 for v in vertices(G)]
-    # else
-    #     x = s.d_max .- [get_prop(G,v,:depth)-0.5 for v in vertices(G)]
-    # end
-    # y = [get_prop(G,v,:center) for v in vertices(G)]
     rp = edge_pad*r; # padded radius for plotting
     lines = Vector{Compose.Form}()
     for e in edges(graph)
@@ -242,30 +245,174 @@ function display_graph_bfs(canvas_height,canvas_width,x,y,lines,shapes,fill_colo
 	)
 end
 
+# Node plotting utilities
+_title_string(n) = string(n)
+_subtitle_string(n) = ""
+_node_color(n) = "red"
+_text_color(n) = _node_color(n)
+_node_shape(n,t=0.1) = Compose.circle(0.5, 0.5, 0.5-t/2)
+# _node_shape(n,t) = Compose.circle(0.5, 0.5, 0.5-t/2)
+for op in (:_node_shape,:_node_color,:_subtitle_string,:_text_color,:_title_string)
+    @eval $op(graph::AbstractGraph,v,args...) = $op(v,args...)
+end
+
+function draw_node(n;
+        t=0.1, # line thickness
+        title_scale=0.6,
+        subtitle_scale=0.2,
+        bg_color="white",
+        )
+    title_text = _title_string(n)
+    subtitle_text = _subtitle_string(n)
+    title_y = 0.5
+    if !isempty(subtitle_text)
+        title_y -= subtitle_scale/2
+    end
+    subtitle_y = title_y + (title_scale)/2
+
+    Compose.compose(context(),
+        (context(),
+            Compose.text(0.5, title_y, title_text, hcenter, vcenter), 
+            Compose.fill(_text_color(n)), 
+            fontsize(title_scale*min(w,h))
+            ),
+        (context(),
+            Compose.text(0.5, subtitle_y, subtitle_text, hcenter, vcenter), 
+            Compose.fill(_text_color(n)), 
+            fontsize(subtitle_scale*min(w,h))
+            ),
+        (context(),
+            _node_shape(n,t),
+            fill(bg_color), 
+            Compose.stroke(_node_color(n)),
+            Compose.linewidth(t*w)
+            ),
+        )
+end
+draw_node(graph,v;kwargs...) = draw_node(v;kwargs...)
+
+function default_draw_node(G,v;fg_color="red",bg_color="white",stroke_width=0.1)
+    draw_node(G,v;bg_color=bg_color,t=stroke_width)
+end
+
+default_draw_edge(G,v1,v2,pt1,pt2;fg_color="blue",stroke_width=0.01) = (
+    context(),
+        Compose.line([pt1,pt2]),
+        Compose.stroke(fg_color),
+        Compose.linewidth(stroke_width*w),
+)
+
+"""
+    display_graph(graph;kwargs...)
+
+Plot a graph.
+"""
+function display_graph(graph;
+        draw_node_function = (G,v)->default_draw_node(G,v),
+        draw_edge_function = (G,v,v2,pt1,pt2)->default_draw_edge(G,v,v2,pt1,pt2),
+        grow_mode=:from_bottom, # :from_left, :from_bottom, :from_top,
+        align_mode=:leaf_aligned, # :root_aligned
+        node_size = (0.75,0.75),
+        scale=1.0,
+        pad = (0.5,0.5),
+        aspect_ratio=1.0,
+        bg_color="white"
+    )
+
+    feat_vals = get_graph_layout(graph)
+    # alignment
+    if align_mode == :leaf_aligned
+        x = feat_vals[ForwardDepth()]
+	    y = feat_vals[ForwardCenter()]
+    elseif align_mode == :root_aligned
+        x = feat_vals[BackwardDepth()]
+		x = 1 + maximum(x) .- x
+        y = feat_vals[BackwardCenter()]
+    else
+        throw(ErrorException("Unknown align_mode $align_mode"))
+    end
+    # growth direction
+    if grow_mode == :from_left
+        # do nothing
+    elseif grow_mode == :from_right
+        x = -x
+    elseif grow_mode == :from_bottom
+        x, y = y, -x
+    elseif grow_mode == :from_top
+        x, y = y, x
+    else
+        throw(ErrorException("Unknown grow_mode $grow_mode"))
+    end
+    # ensure positive and shift to be on the canvas (how to shift the canvas instead?)
+	x = x .- minimum(x) .+ node_size[1]/2# .+ pad[1]
+    y = y .- minimum(y) .+ node_size[2]/2# .+ pad[2]
+    context_size=(maximum(x) + node_size[1]/2, maximum(y)+node_size[2]/2)
+	canvas_size   = (context_size[1] .+ 2*pad[1], context_size[2] .+ 2*pad[2])
+    set_default_graphic_size((scale*aspect_ratio*canvas_size[1])cm,(scale*canvas_size[2])cm)
+
+    node_context(a,b,s=node_size) = context(
+        (a-s[1]/2),
+        (b-s[2]/2),
+        s[1],
+        s[2],
+        units=UnitBox(0.0,0.0,1.0,1.0),
+        )
+    edge_context(a,b) = context(a,b,1.0,1.0,units=UnitBox(0.0,0.0,1.0,1.0))
+    nodes = map(
+        v->(node_context(x[v],y[v]), draw_node_function(graph,v)), vertices(graph)
+    )
+    lines = []
+    for e in edges(graph)
+        dx = x[e.dst] - x[e.src]
+        dy = y[e.dst] - y[e.src]
+        push!(lines,
+            # (node_context(x[e.src]+0.5,y[e.src]+0.5,(1.0,1.0)),
+            (edge_context(x[e.src],y[e.src]),
+            draw_edge_function(
+                graph,e.src,e.dst,(0.0,0.0),(dx,dy)
+                ))
+        )
+        # push!(lines,
+        #     draw_edge_function(
+        #         graph,e.src,e.dst,(x[e.src],y[e.src]),(x[e.dst],y[e.dst])
+        #         )
+        # )
+    end
+    Compose.compose( context(units=UnitBox(0.0,0.0,canvas_size...)),
+        (
+            context(pad[1],pad[2],context_size...,units=UnitBox(0.0,0.0,context_size...)),
+            nodes...,
+            lines...,
+        ),
+        compose(context(),rectangle(),fill(bg_color))
+    )
+end
+
+function display_graph_bfs(graph,x,y)
+    N = length(x)
+    compose( context(units=UnitBox(0,0,canvas_height,canvas_width)),
+        (context(),
+			[text(x[i],y[i],text_strings[i],hcenter,vcenter) for i in 1:N]...,
+            stroke("black"),
+			fontsize(10pt),
+			font("futura"),
+		),
+        map(i->(context(),shapes[i],fill(fill_colors[i])),1:N)...,
+        (context(),
+			lines...,
+			stroke("black")
+		),
+        (context(),
+			rectangle(0,0,canvas_height,canvas_width),
+			fill("white")
+		)
+	)
+end
+
 function plot_graph_bfs(graph,v=0;kwargs...)
     display_graph_bfs(get_graph_bfs(graph,v;kwargs...)...)
 end
 
-G = DiGraph(13)
-add_edge!(G,1,3)
-add_edge!(G,2,3)
-add_edge!(G,3,4)
-
-add_edge!(G,5,7)
-add_edge!(G,6,7)
-add_edge!(G,7,8)
-
-add_edge!(G,4,9)
-add_edge!(G,8,9)
-add_edge!(G,9,10)
-add_edge!(G,10,11)
-add_edge!(G,10,12)
-
-add_edge!(G,4,11)
-# add_edge!(G,7,4)
-
-plot_graph_bfs(G;mode=:root_aligned)
-plot_graph_bfs(G;mode=:leaf_aligned)
 
 """
     `SimpleGridWorld{G}`

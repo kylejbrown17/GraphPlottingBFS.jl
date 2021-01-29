@@ -315,7 +315,7 @@ function display_graph(graph;
         node_size = (0.75,0.75),
         scale=1.0,
         pad = (0.5,0.5),
-        aspect_ratio=1.0,
+        aspect_stretch=(1.0,1.0),
         bg_color="white"
     )
 
@@ -344,11 +344,16 @@ function display_graph(graph;
         throw(ErrorException("Unknown grow_mode $grow_mode"))
     end
     # ensure positive and shift to be on the canvas (how to shift the canvas instead?)
+    x *= aspect_stretch[1]
+    y *= aspect_stretch[2]
 	x = x .- minimum(x) .+ node_size[1]/2# .+ pad[1]
     y = y .- minimum(y) .+ node_size[2]/2# .+ pad[2]
     context_size=(maximum(x) + node_size[1]/2, maximum(y)+node_size[2]/2)
 	canvas_size   = (context_size[1] .+ 2*pad[1], context_size[2] .+ 2*pad[2])
-    set_default_graphic_size((scale*aspect_ratio*canvas_size[1])cm,(scale*canvas_size[2])cm)
+    set_default_graphic_size(
+        (scale*canvas_size[1])cm,
+        (scale*canvas_size[2])cm
+        )
 
     node_context(a,b,s=node_size) = context(
         (a-s[1]/2),
@@ -366,17 +371,11 @@ function display_graph(graph;
         dx = x[e.dst] - x[e.src]
         dy = y[e.dst] - y[e.src]
         push!(lines,
-            # (node_context(x[e.src]+0.5,y[e.src]+0.5,(1.0,1.0)),
             (edge_context(x[e.src],y[e.src]),
             draw_edge_function(
                 graph,e.src,e.dst,(0.0,0.0),(dx,dy)
                 ))
         )
-        # push!(lines,
-        #     draw_edge_function(
-        #         graph,e.src,e.dst,(x[e.src],y[e.src]),(x[e.dst],y[e.dst])
-        #         )
-        # )
     end
     Compose.compose( context(units=UnitBox(0.0,0.0,canvas_size...)),
         (

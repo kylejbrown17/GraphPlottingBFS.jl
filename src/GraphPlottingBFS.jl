@@ -12,7 +12,9 @@ export
     backup!,
     step_in,
     step_out,
-	bfs!,
+    bfs!,
+    display_graph,
+    draw_node,
 	get_graph_bfs,
 	display_graph_bfs,
 	plot_graph_bfs,
@@ -53,17 +55,20 @@ end
 step_in(s::BFS_state) = BFS_state(d=s.d+1,w=s.w,d_max=s.d_max)
 step_out(s::BFS_state) = BFS_state(d=s.d-1,w=s.w,d_max=s.d_max)
 
-function bfs!(G,v,s)
+function bfs!(G,v,s,visited=Set{Int}())
     s = step_in(s)
     if indegree(G,v) == 0
         s = leaf_case!(G,v,s)
     else
         initial_branch_case!(G,v,s)
         for v2 in inneighbors(G,v)
-            s = bfs!(G,v2,s)
-            backup!(G,v,v2,s)
+            # if !(v2 in visited)
+                s = bfs!(G,v2,s,visited)
+                backup!(G,v,v2,s)
+            # end
         end
     end
+    push!(visited,v)
     return step_out(s)
 end
 
@@ -78,39 +83,79 @@ struct ForwardCenter <: GraphInfoFeature end
 struct BackwardIndex <: GraphInfoFeature end
 struct BackwardCenter <: GraphInfoFeature end
 
+"""
+    Track the width of the tree above a node, and the parent of that tree
+"""
+struct ForwardTreeWidth <: GraphInfoFeature end
+struct BackwardTreeWidth <: GraphInfoFeature end
+initial_value(f::Union{ForwardTreeWidth,BackwardTreeWidth}) = Dict{Int,Int}()
+function forward_propagate(::ForwardTreeWidth,G,v,v2,vec)
+    for (k,val) in vec[v2]
+        vec[v][k] = max(get(vec[v],k,0),val)
+    end 
+end
+function backward_propagate(::BackwardTreeWidth,G,v,v2,vec)
+    for (k,val) in vec[v2]
+        vec[v][k] = max(get(vec[v],k,0),val)
+    end
+end
+# backward_propagate(::BackwardTreeWidth,G,v,v2,vec) = merge(vec[v],vec[v2])
+function forward_accumulate(::ForwardTreeWidth,G,v,vtxs,vec)
+    if indegree(G,v) == 0
+        vec[v][v] = 1
+    end
+    return vec[v]
+end
+function backward_accumulate(::BackwardTreeWidth,G,v,vtxs,vec)
+    if outdegree(G,v) == 0
+        vec[v][v] = 1
+    end
+    return vec[v]
+end
+
+
+
 initial_value(f) = 1.0
 initial_value(f::Union{ForwardDepth,BackwardDepth}) = 1
-forward_propagate(f,G,v,val,v2,val2,args...) = val
-backward_propagate(f,G,v,val,v2,val2,args...) = val
-forward_accumulate(f,G,v,val,vtxs,vals,args...) = val
-backward_accumulate(f,G,v,val,vtxs,vals,args...) = val
+forward_propagate(f,G,v,v2,vec) = vec[v]
+backward_propagate(f,G,v,v2,vec) = vec[v]
+forward_accumulate(f,G,v,vtxs,vec) = vec[v]
+backward_accumulate(f,G,v,vtxs,vec) = vec[v]
 
-backward_propagate(f::BackwardDepth,G,v,val,v2,val2,args...) 	= max(val,val2+1)
-forward_propagate(f::ForwardDepth,	G,v,val,v2,val2,args...) 	= max(val,val2+1)
-forward_propagate(f::ForwardWidth,	G,v,val,v2,val2,args...) 	= max(val,val2/max(1,outdegree(G,v2)))
-backward_propagate(f::BackwardWidth,G,v,val,v2,val2,args...) 	= max(val,val2/max(1,indegree(G,v2)))
-forward_accumulate(f::ForwardWidth,	G,v,val,vtxs,vals) 			= max(val,sum([0,map(i->vals[i]/outdegree(G,vtxs[i]),1:length(vals))...]))
-backward_accumulate(f::BackwardWidth,G,v,val,vtxs,vals) 		= max(val,sum([0,map(i->vals[i]/indegree(G,vtxs[i]),1:length(vals))...]))
+backward_propagate(::BackwardDepth, G,v,v2,vec) = max(vec[v],vec[v2]+1)
+forward_propagate(::ForwardDepth,	G,v,v2,vec) = max(vec[v],vec[v2]+1)
+forward_propagate(::ForwardWidth,	G,v,v2,vec) = max(vec[v],vec[v2]/max(1,outdegree(G,v2)))
+backward_propagate(::BackwardWidth, G,v,v2,vec) = max(vec[v],vec[v2]/max(1,indegree(G,v2)))
+forward_accumulate(::ForwardWidth,	G,v,vtxs,vec) = max(vec[v],sum([0,map(v2->vec[v2]/outdegree(G,v2),vtxs)...]))
+backward_accumulate(::BackwardWidth,G,v,vtxs,vec) = max(vec[v],sum([0,map(v2->vec[v2]/indegree(G,v2),vtxs)...]))
 
-function get_graph_layout(G,feats=[ForwardDepth(),BackwardDepth(),ForwardWidth(),BackwardWidth()])
-	@assert !is_cyclic(G)
-	feat_vals = Dict(f=>map(v->initial_value(f),vertices(G)) for f in feats)
+function forward_pass!(G,feats,feat_vals=Dict(f=>map(v->initial_value(f),vertices(G)) for f in feats))
 	for v in topological_sort_by_dfs(G)
 		for (f,vec) in feat_vals
-			vec[v] = forward_accumulate(f,G,v,vec[v],inneighbors(G,v),map(v2->vec[v2], inneighbors(G,v)))
+			vec[v] = forward_accumulate(f,G,v,inneighbors(G,v),vec)
 			for v2 in inneighbors(G,v)
-				vec[v] = forward_propagate(f,G,v,vec[v],v2,vec[v2])
+				vec[v] = forward_propagate(f,G,v,v2,vec)
 			end
 		end
-	end
+    end
+    return feat_vals
+end
+function backward_pass!(G,feats,feat_vals=Dict(f=>map(v->initial_value(f),vertices(G)) for f in feats))
 	for v in reverse(topological_sort_by_dfs(G))
 		for (f,vec) in feat_vals
-			vec[v] = backward_accumulate(f,G,v,vec[v],outneighbors(G,v),map(v2->vec[v2], outneighbors(G,v)))
+			vec[v] = backward_accumulate(f,G,v,outneighbors(G,v),vec)
 			for v2 in outneighbors(G,v)
-				vec[v] = backward_propagate(f,G,v,vec[v],v2,vec[v2])
+				vec[v] = backward_propagate(f,G,v,v2,vec)
 			end
 		end
-	end
+    end
+    return feat_vals
+end
+
+function get_graph_layout(G,feats=[ForwardDepth(),BackwardDepth(),ForwardWidth(),BackwardWidth()])
+    @assert !is_cyclic(G)
+    feat_vals = forward_pass!(G,feats)
+    feat_vals = backward_pass!(G,feats,feat_vals)
 	feat_vals[VtxWidth()] = max.(feat_vals[ForwardWidth()],feat_vals[BackwardWidth()])
 
     graph = MetaDiGraph(nv(G))
@@ -122,7 +167,10 @@ function get_graph_layout(G,feats=[ForwardDepth(),BackwardDepth(),ForwardWidth()
 	for v in end_vtxs
 		s = bfs!(graph,v,s)
 	end
-	for (idx_key,ctr_key,depth_key) in [(ForwardIndex(),ForwardCenter(),ForwardDepth()),((BackwardIndex(),BackwardCenter(),BackwardDepth()))]
+	for (idx_key,ctr_key,depth_key) in [
+            (ForwardIndex(),ForwardCenter(),ForwardDepth()),
+            ((BackwardIndex(),BackwardCenter(),BackwardDepth()))
+            ]
 		vec = feat_vals[depth_key]
 		forward_width_counts = map(v->Int[],1:maximum(vec))
 		forward_idxs = zeros(nv(G))
@@ -153,100 +201,9 @@ function get_graph_layout(G,feats=[ForwardDepth(),BackwardDepth(),ForwardWidth()
 	feat_vals
 end
 
-# mutable struct NodeDrawModel{S}
-# 	x::Float64
-# 	y::Float64
-# 	shape::S
-# 	fill_color::Colorant
-# 	draw_color::Colorant
-# 	text::String
-# end
-# mutable struct EdgeDrawModel
-# 	v1::Int
-# 	v2::Int
-# 	edge_pad::Float64
-# 	text::String
-# end
-# mutable struct GraphBFSModel
-#     canvas_height::Float64
-# 	canvas_width::Float64
-# 	nodes::Vector{EdgeDrawModel}
-# 	edges::Vector{NodeDrawModel}
-# end
-
-function get_graph_bfs(graph,v=0;
-        shape_function = (G,v,x,y,r)->Compose.circle(x,y,r),
-        color_function = (G,v,x,y,r)->"cyan",
-        text_function = (G,v,x,y,r)->string(v),
-        mode=:leaf_aligned,
-        ϵ=0.000000001,
-        edge_pad=1.1,
-		aspect_ratio=2,
-		scale=1.0,
-        r = 0.2)
-
-    # G = graph
-	feat_vals = get_graph_layout(graph)
-    if mode == :leaf_aligned
-        x = feat_vals[ForwardDepth()]
-	    y = feat_vals[ForwardCenter()]
-    else
-        x = feat_vals[BackwardDepth()]
-		x = 1 + maximum(x) .- x
-	    y = feat_vals[BackwardCenter()]
-    end
-	x = x .+ (1 - minimum(x))
-	y = y .+ (1 - minimum(y))
-	# canvas_height = maximum(feat_vals[ForwardDepth()])+1
-	# canvas_width = maximum(feat_vals[ForwardWidth()])+1
-    # set_default_graphic_size((2*canvas_height)cm,(canvas_width)cm)
-	canvas_height = 2+maximum(x) .- min(0,minimum(x))
-	canvas_width = 2+maximum(y) .- min(0,minimum(y))
-    set_default_graphic_size((scale*aspect_ratio*canvas_height)cm,(scale*canvas_width)cm)
-
-    rp = edge_pad*r; # padded radius for plotting
-    lines = Vector{Compose.Form}()
-    for e in edges(graph)
-        dx = (x[e.dst] - x[e.src])
-        dy = (y[e.dst] - y[e.src])
-        d = sqrt(dx^2 + dy^2)
-        push!(lines,
-            line([
-                (x[e.src] + (rp)*dx/d, y[e.src] + (rp)*dy/d),
-                (x[e.dst] - (rp)*dx/d, y[e.dst] - (rp)*dy/d)
-                ])
-        )
-    end
-    shapes = map(i->shape_function(graph,i,x[i],y[i],r),1:nv(graph))
-    fill_colors = map(i->color_function(graph,i,x[i],y[i],r),1:nv(graph))
-    text_strings = map(i->text_function(graph,i,x[i],y[i],r),1:nv(graph))
-
-    return canvas_height,canvas_width,x,y,lines,shapes,fill_colors,text_strings
-end
-
-function display_graph_bfs(canvas_height,canvas_width,x,y,lines,shapes,fill_colors,text_strings)
-    N = length(x)
-    compose( context(units=UnitBox(0,0,canvas_height,canvas_width)),
-        (context(),
-			[text(x[i],y[i],text_strings[i],hcenter,vcenter) for i in 1:N]...,
-            stroke("black"),
-			fontsize(10pt),
-			font("futura"),
-		),
-        map(i->(context(),shapes[i],fill(fill_colors[i])),1:N)...,
-        (context(),
-			lines...,
-			stroke("black")
-		),
-        (context(),
-			rectangle(0,0,canvas_height,canvas_width),
-			fill("white")
-		)
-	)
-end
-
 # Node plotting utilities
-_title_string(n) = string(n)
+_title_string(n::Int) = string(n)
+_title_string(n) = ""
 _subtitle_string(n) = ""
 _node_color(n) = "red"
 _text_color(n) = _node_color(n)
@@ -386,6 +343,79 @@ function display_graph(graph;
         compose(context(),rectangle(),fill(bg_color))
     )
 end
+
+
+function get_graph_bfs(graph,v=0;
+        shape_function = (G,v,x,y,r)->Compose.circle(x,y,r),
+        color_function = (G,v,x,y,r)->"cyan",
+        text_function = (G,v,x,y,r)->string(v),
+        mode=:leaf_aligned,
+        ϵ=0.000000001,
+        edge_pad=1.1,
+		aspect_ratio=2,
+		scale=1.0,
+        r = 0.2)
+
+    # G = graph
+	feat_vals = get_graph_layout(graph)
+    if mode == :leaf_aligned
+        x = feat_vals[ForwardDepth()]
+	    y = feat_vals[ForwardCenter()]
+    else
+        x = feat_vals[BackwardDepth()]
+		x = 1 + maximum(x) .- x
+	    y = feat_vals[BackwardCenter()]
+    end
+	x = x .+ (1 - minimum(x))
+	y = y .+ (1 - minimum(y))
+	# canvas_height = maximum(feat_vals[ForwardDepth()])+1
+	# canvas_width = maximum(feat_vals[ForwardWidth()])+1
+    # set_default_graphic_size((2*canvas_height)cm,(canvas_width)cm)
+	canvas_height = 2+maximum(x) .- min(0,minimum(x))
+	canvas_width = 2+maximum(y) .- min(0,minimum(y))
+    set_default_graphic_size((scale*aspect_ratio*canvas_height)cm,(scale*canvas_width)cm)
+
+    rp = edge_pad*r; # padded radius for plotting
+    lines = Vector{Compose.Form}()
+    for e in edges(graph)
+        dx = (x[e.dst] - x[e.src])
+        dy = (y[e.dst] - y[e.src])
+        d = sqrt(dx^2 + dy^2)
+        push!(lines,
+            line([
+                (x[e.src] + (rp)*dx/d, y[e.src] + (rp)*dy/d),
+                (x[e.dst] - (rp)*dx/d, y[e.dst] - (rp)*dy/d)
+                ])
+        )
+    end
+    shapes = map(i->shape_function(graph,i,x[i],y[i],r),1:nv(graph))
+    fill_colors = map(i->color_function(graph,i,x[i],y[i],r),1:nv(graph))
+    text_strings = map(i->text_function(graph,i,x[i],y[i],r),1:nv(graph))
+
+    return canvas_height,canvas_width,x,y,lines,shapes,fill_colors,text_strings
+end
+
+function display_graph_bfs(canvas_height,canvas_width,x,y,lines,shapes,fill_colors,text_strings)
+    N = length(x)
+    compose( context(units=UnitBox(0,0,canvas_height,canvas_width)),
+        (context(),
+			[text(x[i],y[i],text_strings[i],hcenter,vcenter) for i in 1:N]...,
+            stroke("black"),
+			fontsize(10pt),
+			font("futura"),
+		),
+        map(i->(context(),shapes[i],fill(fill_colors[i])),1:N)...,
+        (context(),
+			lines...,
+			stroke("black")
+		),
+        (context(),
+			rectangle(0,0,canvas_height,canvas_width),
+			fill("white")
+		)
+	)
+end
+
 
 function display_graph_bfs(graph,x,y)
     N = length(x)

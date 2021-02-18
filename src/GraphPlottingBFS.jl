@@ -55,17 +55,17 @@ end
 step_in(s::BFS_state) = BFS_state(d=s.d+1,w=s.w,d_max=s.d_max)
 step_out(s::BFS_state) = BFS_state(d=s.d-1,w=s.w,d_max=s.d_max)
 
-function bfs!(G,v,s,visited=Set{Int}())
+function bfs!(G,v,s,visited=Set{Int}(),enforce_visited=false)
     s = step_in(s)
     if indegree(G,v) == 0
         s = leaf_case!(G,v,s)
     else
         initial_branch_case!(G,v,s)
         for v2 in inneighbors(G,v)
-            # if !(v2 in visited)
-                s = bfs!(G,v2,s,visited)
+            if !(v2 in visited) || !enforce_visited
+                s = bfs!(G,v2,s,visited,enforce_visited)
                 backup!(G,v,v2,s)
-            # end
+            end
         end
     end
     push!(visited,v)
@@ -152,7 +152,11 @@ function backward_pass!(G,feats,feat_vals=Dict(f=>map(v->initial_value(f),vertic
     return feat_vals
 end
 
-function get_graph_layout(G,feats=[ForwardDepth(),BackwardDepth(),ForwardWidth(),BackwardWidth()])
+function get_graph_layout(
+        G,feats=[ForwardDepth(),BackwardDepth(),ForwardWidth(),BackwardWidth()]
+        ;
+        enforce_visited=false,
+        )
     @assert !is_cyclic(G)
     feat_vals = forward_pass!(G,feats)
     feat_vals = backward_pass!(G,feats,feat_vals)
@@ -165,7 +169,7 @@ function get_graph_layout(G,feats=[ForwardDepth(),BackwardDepth(),ForwardWidth()
 	end_vtxs = [v for v in vertices(graph) if outdegree(graph,v) == 0]
 	s = BFS_state(0,0,0)
 	for v in end_vtxs
-		s = bfs!(graph,v,s)
+		s = bfs!(graph,v,s,Set{Int}(),enforce_visited)
 	end
 	for (idx_key,ctr_key,depth_key) in [
             (ForwardIndex(),ForwardCenter(),ForwardDepth()),
@@ -273,10 +277,11 @@ function display_graph(graph;
         scale=1.0,
         pad = (0.5,0.5),
         aspect_stretch=(1.0,1.0),
-        bg_color="white"
+        bg_color="white",
+        enforce_visited=false
     )
 
-    feat_vals = get_graph_layout(graph)
+    feat_vals = get_graph_layout(graph;enforce_visited=enforce_visited)
     # alignment
     if align_mode == :leaf_aligned
         x = feat_vals[ForwardDepth()]

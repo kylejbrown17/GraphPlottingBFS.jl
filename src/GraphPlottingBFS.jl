@@ -210,8 +210,11 @@ _title_string(n::Int) = string(n)
 _title_string(n) = ""
 _subtitle_string(n) = ""
 _node_color(n) = "red"
+_node_bg_color(n) = "white"
 _text_color(n) = _node_color(n)
 _node_shape(n,t=0.1) = Compose.circle(0.5, 0.5, 0.5-t/2)
+_title_text_scale(n) = 0.6
+_subtitle_text_scale(n) = 0.2
 # _node_shape(n,t) = Compose.circle(0.5, 0.5, 0.5-t/2)
 for op in (:_node_shape,:_node_color,:_subtitle_string,:_text_color,:_title_string)
     @eval $op(graph::AbstractGraph,v,args...) = $op(v,args...)
@@ -219,12 +222,14 @@ end
 
 function draw_node(n;
         t=0.1, # line thickness
-        title_scale=0.6,
-        subtitle_scale=0.2,
-        bg_color="white",
+        title_scale=_title_text_scale(n),
+        subtitle_scale=_subtitle_text_scale(n),
+        bg_color=_node_bg_color(n),
+        text_color=_text_color(n),
+        node_color=_node_color(n),
+        title_text = _title_string(n),
+        subtitle_text = _subtitle_string(n),
         )
-    title_text = _title_string(n)
-    subtitle_text = _subtitle_string(n)
     title_y = 0.5
     if !isempty(subtitle_text)
         title_y -= subtitle_scale/2
@@ -234,18 +239,18 @@ function draw_node(n;
     Compose.compose(context(),
         (context(),
             Compose.text(0.5, title_y, title_text, hcenter, vcenter), 
-            Compose.fill(_text_color(n)), 
+            Compose.fill(text_color), 
             fontsize(title_scale*min(w,h))
             ),
         (context(),
             Compose.text(0.5, subtitle_y, subtitle_text, hcenter, vcenter), 
-            Compose.fill(_text_color(n)), 
-            fontsize(subtitle_scale*min(w,h))
+            Compose.fill(text_color), 
+            Compose.fontsize(subtitle_scale*min(w,h))
             ),
         (context(),
             _node_shape(n,t),
             fill(bg_color), 
-            Compose.stroke(_node_color(n)),
+            Compose.stroke(node_color),
             Compose.linewidth(t*w)
             ),
         )
@@ -253,7 +258,7 @@ end
 draw_node(graph,v;kwargs...) = draw_node(v;kwargs...)
 
 function default_draw_node(G,v;fg_color="red",bg_color="white",stroke_width=0.1)
-    draw_node(G,v;bg_color=bg_color,t=stroke_width)
+    draw_node(G,v;t=stroke_width)
 end
 
 default_draw_edge(G,v1,v2,pt1,pt2;fg_color="blue",stroke_width=0.01) = (
@@ -262,6 +267,14 @@ default_draw_edge(G,v1,v2,pt1,pt2;fg_color="blue",stroke_width=0.01) = (
         Compose.stroke(fg_color),
         Compose.linewidth(stroke_width*w),
 )
+
+function draw_ortho_edge(G,v1,v2,pt1,pt2;fg_color="blue",stroke_width=0.01)
+    ymid = (pt1[2]+pt2[2])/2
+    (context(),
+        Compose.line([pt1,(pt1[1],ymid),(pt2[1],ymid),pt2]),
+        Compose.stroke(fg_color),
+        Compose.linewidth(stroke_width*w),)
+end
 
 """
     display_graph(graph;kwargs...)
